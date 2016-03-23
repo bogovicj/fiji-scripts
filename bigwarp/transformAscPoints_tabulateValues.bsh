@@ -1,0 +1,307 @@
+import ij.IJ;
+import ij.ImagePlus;
+
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+
+import net.imglib2.RealRandomAccess;
+import net.imglib2.RealRandomAccessible;
+import net.imglib2.img.Img;
+import net.imglib2.img.display.imagej.ImageJFunctions;
+import net.imglib2.interpolation.randomaccess.NearestNeighborInterpolatorFactory;
+import net.imglib2.realtransform.AffineGet;
+import net.imglib2.realtransform.AffineTransform2D;
+import net.imglib2.realtransform.AffineTransform3D;
+import net.imglib2.realtransform.RealViews;
+import net.imglib2.type.numeric.ARGBType;
+import net.imglib2.type.numeric.NumericType;
+import net.imglib2.type.numeric.integer.UnsignedByteType;
+import net.imglib2.type.numeric.integer.UnsignedShortType;
+import net.imglib2.type.numeric.real.FloatType;
+import net.imglib2.view.Views;
+import au.com.bytecode.opencsv.CSVWriter;
+import bigwarp.landmarks.LandmarkTableModel;
+import jitk.spline.ThinPlateR2LogRSplineKernelTransform;
+
+import fiji.util.gui.GenericDialogPlus;
+
+void writeToCSV( Map mapOut, File f ) throws IOException
+{
+    ArrayList allrows = new ArrayList(); 
+    for( String key : mapOut.keySet() )
+    {
+        for( NumericType v : mapOut.get( key ))
+        {
+            allrows.add( new String[]{ key, v.toString() } );
+        }
+    }
+
+    CSVWriter writer = new CSVWriter( new FileWriter( f ));
+    writer.writeAll( allrows );
+    writer.close();
+}
+
+RealRandomAccessible interpImagePlus( ImagePlus ip )
+{
+
+    double rx = ip.getLocalCalibration().pixelWidth;
+    double ry = ip.getLocalCalibration().pixelHeight;
+    double rz = ip.getLocalCalibration().pixelDepth;
+    
+    AffineGet xfm;
+    if( ip.getNSlices() <=1 )
+    {
+        AffineTransform2D tmp = new AffineTransform2D();
+        tmp.set(   rx,  0.0, 0.0, 
+                  0.0,   ry, 0.0 );
+        xfm = tmp;
+    }
+    else
+    {
+        AffineTransform3D tmp = new AffineTransform3D();
+        tmp.set(   rx,  0.0,  0.0, 0.0,
+                  0.0,   ry,  0.0, 0.0,
+                  0.0,  0.0,   rz, 0.0 );
+        xfm = tmp;
+    }
+    
+    switch ( ip.getType() )
+    {
+    case ImagePlus.GRAY8:
+         return RealViews.affine( 
+                    Views.interpolate( 
+                         Views.extendZero( ImageJFunctions.wrap(  ip ) ), 
+                         new NearestNeighborInterpolatorFactory() ), 
+                 xfm );
+    case ImagePlus.GRAY16:
+         return RealViews.affine(  
+                    Views.interpolate( 
+                         Views.extendZero( ImageJFunctions.wrap(  ip ) ), 
+                         new NearestNeighborInterpolatorFactory() ),
+                 xfm );
+    case ImagePlus.GRAY32:
+        return RealViews.affine(  
+                    Views.interpolate( 
+                        Views.extendZero( ImageJFunctions.wrap(  ip ) ), 
+                        new NearestNeighborInterpolatorFactory() ),
+                 xfm );
+    case ImagePlus.COLOR_RGB:
+         return RealViews.affine(  
+                    Views.interpolate( 
+                            Views.extendZero( ImageJFunctions.wrap(  ip ) ), 
+                            new NearestNeighborInterpolatorFactory() ),
+                 xfm );
+    }
+    return null;
+
+}
+
+ArrayList getPointValues( RealRandomAccessible img, List pts )
+{
+
+    RealRandomAccess rrai = img.realRandomAccess();
+    ArrayList out = new ArrayList( pts.size() );
+
+    for( double[] thispt : pts )
+    {
+        rrai.setPosition( thispt );
+        out.add( rrai.get().copy() );
+    }
+
+    return out;
+}
+	
+public static ArrayList transformPoints( ArrayList pts, ThinPlateR2LogRSplineKernelTransform xfm )
+{
+    ArrayList out = new ArrayList( pts.size() );
+    
+    for( double[] pt : pts )
+        out.add( xfm.apply( pt ));
+    
+    return out;
+}
+
+public static double[] parseLine( String line, int dim )
+{
+    String lineed = (line.substring( line.indexOf( '(' ) + 1, line.indexOf( ')' ) -1 )).trim();
+    
+    String[] nums = lineed.split( "\\s" );
+    double[] out = new double[ dim ];
+    int i = 0;
+    for( String s : nums )
+    {
+        try{ 
+            double d = Double.parseDouble( s );
+            out[ i++ ] = d;
+        }catch( Exception e ) {}
+        
+        if( i == dim )
+            return out;
+    }
+    
+    return out;
+}
+
+TreeMap readPointsAllNames( String f, int dim )
+{
+    BufferedReader br = null;
+    TreeMap map = new TreeMap();
+
+    int nameIndex = 0;
+
+    try
+    {
+        br = new BufferedReader( new FileReader( f ));
+         
+         String line;
+         boolean amReading = false;
+         
+         ArrayList ptList = null;
+         String name = "";
+         while ((line = br.readLine()) != null) 
+         {
+             
+             // find the line to signal stop reading
+             if( amReading && line.contains( "End of markers" ))
+             {
+                 amReading = false;
+                 //System.out.println( ptList.size() );
+                 map.put( name, ptList );
+                 nameIndex++;
+                 continue;
+             }
+
+             // find the line to start reading from
+             if( line.contains( "Name" ) )
+             {
+                 amReading = true;
+                 ptList = new ArrayList();
+                 
+                 // parse name
+                 int idx = line.indexOf( "Name" );
+                 name = line.split( "\"" )[1];
+                 //System.out.println( name );
+                 name = nameIndex + "-" + name;
+                 
+                 continue;
+             }
+             
+             if( !amReading )
+                 continue;
+
+            ptList.add( parseLine( line, dim ) );
+         }
+         
+         br.close();
+    }
+    catch ( FileNotFoundException e )
+    {
+        e.printStackTrace();
+    }
+    catch ( IOException e )
+    {
+        e.printStackTrace();
+    }
+    
+    return map;
+}
+
+public static ArrayList readPoints( String f, String name, int dim )
+{
+    BufferedReader br = null;
+    ArrayList ptList = new ArrayList();
+
+    try
+    {
+        br = new BufferedReader( new FileReader( f ));
+         
+         String line;
+         boolean amReading = false;
+         while ((line = br.readLine()) != null) 
+         {
+
+             // find the line to signal stop reading
+             if( amReading && line.contains( "End of markers" ))
+                 break;
+
+             // find the line to start reading from
+             if( line.contains( "Name" ) && line.contains( name ))
+             {
+                 amReading = true;
+                 continue;
+             }
+             
+             if( !amReading )
+                 continue;
+
+            ptList.add( parseLine( line, dim ) );
+         }
+         
+         br.close();
+    }
+    catch ( FileNotFoundException e )
+    {
+        e.printStackTrace();
+    }
+    catch ( IOException e )
+    {
+        e.printStackTrace();
+    }
+    
+    return ptList;
+}
+
+
+basedefault = IJ.getDir("plugins");
+
+imgf = basedefault;
+ptsf = basedefault;
+xfmf = basedefault;
+fout = basedefault;
+
+// dialog
+gd = new GenericDialogPlus( "ASC files" );
+gd.addChoice( "Number of dimensions", new String[]{"2","3"}, "2" );
+gd.addFileField( "Template Image file", imgf );
+gd.addFileField( "Landmarks: ", xfmf );
+gd.addFileField( "Points ASC file: ", ptsf );
+gd.addFileField( "Destination file: ", fout );
+gd.showDialog();
+
+ndims = gd.getNextChoiceIndex() + 2;
+imgf  = gd.getNextString();
+xfmf  = gd.getNextString();
+ptsf  = gd.getNextString();
+fout  = gd.getNextString();
+
+LandmarkTableModel ltm = new LandmarkTableModel( ndims );
+ltm.load( new File( xfmf ));
+
+xfm = ltm.getTransform();
+
+ip = IJ.openImage( imgf );
+out = interpImagePlus( ip );
+//System.out.println( out );
+
+ptMap = readPointsAllNames( ptsf, ndims );
+mapOut = new TreeMap();
+
+for( String key : ptMap.keySet() )
+{
+    keyPts = ptMap.get( key );
+    ptsXfm = transformPoints( keyPts, xfm );
+
+    vals = getPointValues( out, ptsXfm );
+    mapOut.put( key, vals );
+    //System.out.println( " " + vals.size() + " values for key " + key );
+}
+
+writeToCSV( mapOut, new File( fout ));
