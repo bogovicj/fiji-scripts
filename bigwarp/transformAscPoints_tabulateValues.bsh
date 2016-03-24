@@ -276,6 +276,11 @@ gd.addFileField( "Points ASC file: ", ptsf );
 gd.addFileField( "Destination file: ", fout );
 gd.showDialog();
 
+if( gd.wasCanceled() )
+{
+    return null;
+}
+
 ndims = gd.getNextChoiceIndex() + 2;
 imgf  = gd.getNextString();
 xfmf  = gd.getNextString();
