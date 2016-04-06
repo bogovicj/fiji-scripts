@@ -7,11 +7,16 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import jitk.spline.ThinPlateR2LogRSplineKernelTransform;
 import net.imglib2.RealRandomAccess;
 import net.imglib2.RealRandomAccessible;
 import net.imglib2.img.Img;
@@ -23,31 +28,159 @@ import net.imglib2.realtransform.AffineTransform3D;
 import net.imglib2.realtransform.RealViews;
 import net.imglib2.type.numeric.ARGBType;
 import net.imglib2.type.numeric.NumericType;
+import net.imglib2.type.numeric.RealType;
 import net.imglib2.type.numeric.integer.UnsignedByteType;
 import net.imglib2.type.numeric.integer.UnsignedShortType;
 import net.imglib2.type.numeric.real.FloatType;
 import net.imglib2.view.Views;
-import au.com.bytecode.opencsv.CSVWriter;
-import bigwarp.landmarks.LandmarkTableModel;
-import jitk.spline.ThinPlateR2LogRSplineKernelTransform;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import fiji.util.gui.GenericDialogPlus;
+import bigwarp.landmarks.LandmarkTableModel;
+import au.com.bytecode.opencsv.CSVWriter;
 
-void writeToCSV( Map mapOut, File f ) throws IOException
-{
-    ArrayList allrows = new ArrayList(); 
-    for( String key : mapOut.keySet() )
+ HashMap parseJSON( String jsonFilePath ) 
+	{
+		//jsonString = new String( Files.readAllBytes( Paths.get( jsonFilePath ) ), StandardCharsets.UTF_8 );
+		//json = new JSONObject( jsonString );
+
+        rd = new BufferedReader(new FileReader( jsonFilePath ));
+		builder = new StringBuilder();
+		inputLine = null;
+		while((inputLine = rd.readLine()) != null)
+			builder.append( inputLine );
+
+		rd.close();
+
+		json = new JSONObject( builder.toString() );
+
+		map = new HashMap();
+		add( json, map );
+		return map;
+	}
+	
+void add( JSONObject jsonObj, Map map )
+	{
+		if( jsonObj.has( "id" ) && jsonObj.has( "name" ))
+		{
+			map.put( jsonObj.getInt( "id" ), jsonObj.getString( "name" ) );
+		}
+
+		if( jsonObj.has( "children" ))
+		{
+			jsonArray = jsonObj.getJSONArray( "children" );
+			for( int i = 0; i < jsonArray.length(); i++ )
+				add( jsonArray.getJSONObject( i ), map );
+		}
+	}
+
+String[] prepend( String pre, String[] post )
+	{
+		String [] out = new String[ post.length + 1 ];
+		out[ 0 ] = pre;
+		for( int i = 0; i < post.length; i++ )
+			out[ i + 1 ] = post[ i ];
+		
+		return out;
+	}
+
+ArrayList createRows( 
+			ArrayList values, 
+			ArrayList pts,
+			ArrayList ptsXfm,
+			HashMap atlasOntology  )
+	{
+		i = 0;
+		out = new ArrayList( values.size() );
+		for( RealType v : values )
+		{
+			pt    = pts.get( i );
+			ptxfm = ptsXfm.get( i );
+			if( atlasOntology != null )
+			{
+				out.add( new String[]{ 
+						Double.toString( pt[0]), Double.toString( pt[1]), Double.toString( pt[2]),
+						Double.toString( ptxfm[0]), Double.toString( ptxfm[1]), Double.toString( ptxfm[2]),
+						v.toString(),
+						atlasOntology.get( (int) v.getRealDouble() )
+						});
+			}
+			else
+			{
+				out.add( new String[]{ 
+						Double.toString( pt[0]), Double.toString( pt[1]), Double.toString( pt[2]),
+						Double.toString( ptxfm[0]), Double.toString( ptxfm[1]), Double.toString( ptxfm[2]),
+						v.toString()
+						});
+			}
+			
+			i++;
+		}
+		return out;
+	}
+
+
+TreeMap getCountsPerLabel( ArrayList labelList )
     {
-        for( NumericType v : mapOut.get( key ))
+        countsByLabel = new TreeMap();
+       
+        for( Object l : labelList )
         {
-            allrows.add( new String[]{ key, v.toString() } );
+            if( countsByLabel.containsKey( l ))
+            {
+                // increment the count for this label
+                countsByLabel.put( l, countsByLabel.get( l ).intValue() + 1 );
+            }
+            else
+            {
+                countsByLabel.put( l, 1 );
+            }
         }
+        return countsByLabel;
     }
 
-    CSVWriter writer = new CSVWriter( new FileWriter( f ));
-    writer.writeAll( allrows );
-    writer.close();
-}
+void writeToCSV( Map mapOut, File f ) 
+	{
+		allrows = new ArrayList(); 
+		for( String key : mapOut.keySet() )
+		{
+			for( String[] v : mapOut.get( key ))
+			{
+				allrows.add( prepend( key, v ) );
+			}
+		}
+
+		writer = new CSVWriter( new FileWriter( f ));
+		writer.writeAll( allrows );
+		writer.close();
+	}
+
+ void writeCountsToCSV( 
+			TreeMap countMapOut,
+			Map atlasOntology,
+			File f )
+	{
+		allrows = new ArrayList();
+		
+		for( String key : countMapOut.keySet() )
+		{
+			map2 = countMapOut.get( key );
+			for( RealType k2 : map2.keySet())
+			{
+				allrows.add( new String[]{ 
+						key, 
+						k2.toString(),
+						atlasOntology.get( (int)k2.getRealDouble() ),
+						map2.get( k2 ).toString() } );
+			}
+		}
+		
+		writer = new CSVWriter( new FileWriter( f ));
+		writer.writeAll( allrows );
+		writer.close();
+	}
 
 RealRandomAccessible interpImagePlus( ImagePlus ip )
 {
@@ -119,17 +252,28 @@ ArrayList getPointValues( RealRandomAccessible img, List pts )
     return out;
 }
 	
-public static ArrayList transformPoints( ArrayList pts, ThinPlateR2LogRSplineKernelTransform xfm )
+ArrayList transformPoints( ArrayList pts, ThinPlateR2LogRSplineKernelTransform xfm, boolean inverse )
 {
-    ArrayList out = new ArrayList( pts.size() );
-    
-    for( double[] pt : pts )
-        out.add( xfm.apply( pt ));
+    out = new ArrayList( pts.size() );
+    if( inverse )
+	{
+		for( double[] pt : pts )
+	    {
+		    warpedPt = xfm.initialGuessAtInverse( pt, 5.0 );
+		    xfm.inverseTol( pt, warpedPt, 2.0, 4000 );
+		    out.add( warpedPt );
+		}
+	}
+	else
+	{
+		for( double[] pt : pts )
+			out.add( xfm.apply( pt ));
+	}
     
     return out;
 }
 
-public static double[] parseLine( String line, int dim )
+double[] parseLine( String line, int dim, boolean transformToAscConvention, Double actualZ )
 {
     String lineed = (line.substring( line.indexOf( '(' ) + 1, line.indexOf( ')' ) -1 )).trim();
     
@@ -138,19 +282,35 @@ public static double[] parseLine( String line, int dim )
     int i = 0;
     for( String s : nums )
     {
-        try{ 
-            double d = Double.parseDouble( s );
-            out[ i++ ] = d;
-        }catch( Exception e ) {}
-        
-        if( i == dim )
-            return out;
+            try
+			{
+				if( actualZ != null && i == 2 )
+				{
+					out[ i++ ] = actualZ.doubleValue();
+				}
+				else if( transformToAscConvention && i == 1 )
+				{
+					double d = Double.parseDouble( s );
+					out[ i++ ] = -d;
+				}
+				else
+				{
+					double d = Double.parseDouble( s );
+					out[ i++ ] = d;
+				}
+				
+			}catch( Exception e ) {}
+			
+			if( i == dim )
+			{
+				return out;
+			}
     }
     
     return out;
 }
 
-TreeMap readPointsAllNames( String f, int dim )
+TreeMap readPointsAllNames( String f, int dim, boolean transformToAscConvention, Double actualZ )
 {
     BufferedReader br = null;
     TreeMap map = new TreeMap();
@@ -173,7 +333,6 @@ TreeMap readPointsAllNames( String f, int dim )
              if( amReading && line.contains( "End of markers" ))
              {
                  amReading = false;
-                 //System.out.println( ptList.size() );
                  map.put( name, ptList );
                  nameIndex++;
                  continue;
@@ -188,7 +347,6 @@ TreeMap readPointsAllNames( String f, int dim )
                  // parse name
                  int idx = line.indexOf( "Name" );
                  name = line.split( "\"" )[1];
-                 //System.out.println( name );
                  name = nameIndex + "-" + name;
                  
                  continue;
@@ -197,7 +355,7 @@ TreeMap readPointsAllNames( String f, int dim )
              if( !amReading )
                  continue;
 
-            ptList.add( parseLine( line, dim ) );
+            ptList.add( parseLine( line, dim, transformToAscConvention, actualZ ) );
          }
          
          br.close();
@@ -259,8 +417,10 @@ public static ArrayList readPoints( String f, String name, int dim )
     return ptList;
 }
 
+atlasOntologyFile = "/groups/saalfeld/public/sarada/atlasStructureOntology.json";
+atlasOntology = parseJSON( atlasOntologyFile );
 
-basedefault = IJ.getDir("plugins");
+basedefault = "";
 
 imgf = basedefault;
 ptsf = basedefault;
@@ -269,11 +429,12 @@ fout = basedefault;
 
 // dialog
 gd = new GenericDialogPlus( "ASC files" );
-gd.addChoice( "Number of dimensions", new String[]{"2","3"}, "2" );
+gd.addChoice( "Number of dimensions", new String[]{"2","3"}, "3" );
+gd.addNumericField("z value", Double.NaN, 4 );
 gd.addFileField( "Template Image file", imgf );
 gd.addFileField( "Landmarks: ", xfmf );
 gd.addFileField( "Points ASC file: ", ptsf );
-gd.addFileField( "Destination file: ", fout );
+gd.addCheckbox( "inverse", false );
 gd.showDialog();
 
 if( gd.wasCanceled() )
@@ -281,11 +442,28 @@ if( gd.wasCanceled() )
     return null;
 }
 
-ndims = gd.getNextChoiceIndex() + 2;
-imgf  = gd.getNextString();
-xfmf  = gd.getNextString();
-ptsf  = gd.getNextString();
-fout  = gd.getNextString();
+ndims  = gd.getNextChoiceIndex() + 2;
+zValue = gd.getNextNumber();
+imgf   = gd.getNextString();
+xfmf   = gd.getNextString();
+ptsf   = gd.getNextString();
+inverse= gd.getNextBoolean();
+
+if( zValue == Double.NaN )
+    zValue = null;
+
+/*
+ * REMOVE ME
+ */
+imgf = "/data-ssd/john/forSarada/annotation_10.tif";
+ptsf = "/data-ssd/john/forSarada/Cell_counts_51/slice " + (4) + ".ASC";
+xfmf = "/data-ssd/john/forSarada/Allan10_D10-051_refine.csv";
+/*
+ * TO HERE
+ */ 
+
+fout   = ptsf.replaceAll( ".ASC", "_pointLabels.csv" );
+cfout  = ptsf.replaceAll( ".ASC", "_counts.csv" );
 
 LandmarkTableModel ltm = new LandmarkTableModel( ndims );
 ltm.load( new File( xfmf ));
@@ -293,20 +471,29 @@ ltm.load( new File( xfmf ));
 xfm = ltm.getTransform();
 
 ip = IJ.openImage( imgf );
-out = interpImagePlus( ip );
-//System.out.println( out );
+ipInterp = interpImagePlus( ip );
 
-ptMap = readPointsAllNames( ptsf, ndims );
-mapOut = new TreeMap();
+		/*
+		 *  Transform the imageplus to conform to the ASC file conventions:
+		 *  The origin is at the "top left" corner as usual, and y values *decrease* from top to bottom
+         *  For now, always do this and don't expose the option
+		 */
+ptMap = readPointsAllNames( ptsf, ndims, true, zValue );
+mapOut      = new TreeMap();
+countMapOut = new TreeMap();
 
 for( String key : ptMap.keySet() )
 {
     keyPts = ptMap.get( key );
-    ptsXfm = transformPoints( keyPts, xfm );
+    ptsXfm = transformPoints( keyPts, xfm, !inverse );
 
-    vals = getPointValues( out, ptsXfm );
-    mapOut.put( key, vals );
-    //System.out.println( " " + vals.size() + " values for key " + key );
+    vals = getPointValues( ipInterp, ptsXfm );
+
+    mapOut.put( key, createRows( vals, keyPts, ptsXfm, atlasOntology ));
+    countMapOut.put( key, getCountsPerLabel( vals ));
 }
 
 writeToCSV( mapOut, new File( fout ));
+writeCountsToCSV( countMapOut, atlasOntology, new File( cfout ));
+
+IJ.showMessage("Point transform finished");
