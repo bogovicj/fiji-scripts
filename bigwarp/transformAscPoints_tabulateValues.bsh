@@ -452,16 +452,6 @@ inverse= gd.getNextBoolean();
 if( zValue == Double.NaN )
     zValue = null;
 
-/*
- * REMOVE ME
- */
-imgf = "/data-ssd/john/forSarada/annotation_10.tif";
-ptsf = "/data-ssd/john/forSarada/Cell_counts_51/slice " + (4) + ".ASC";
-xfmf = "/data-ssd/john/forSarada/Allan10_D10-051_refine.csv";
-/*
- * TO HERE
- */ 
-
 fout   = ptsf.replaceAll( ".ASC", "_pointLabels.csv" );
 cfout  = ptsf.replaceAll( ".ASC", "_counts.csv" );
 
