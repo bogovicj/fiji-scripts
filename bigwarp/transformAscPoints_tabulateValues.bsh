@@ -417,7 +417,7 @@ public static ArrayList readPoints( String f, String name, int dim )
     return ptList;
 }
 
-atlasOntologyFile = "/groups/saalfeld/public/sarada/atlasStructureOntology.json";
+atlasOntologyFile = IJ.getDir("plugins") + "atlasStructureOntology.json";
 atlasOntology = parseJSON( atlasOntologyFile );
 
 basedefault = "";
