@@ -284,12 +284,21 @@ double[] parseLine( String line, int dim, boolean transformToAscConvention, Doub
     {
             try
 			{
-				if( actualZ != null && i == 2 )
+				if( i == 2 )
 				{
-					out[ i++ ] = actualZ.doubleValue();
+                    if( actualZ == null || !Double.isNaN( actualZ ))
+                        out[ i++ ] = actualZ.doubleValue();
+			        else	
+                    {
+                        double d = Double.parseDouble( s );
+                        // SARADA!
+                        // Change the line below to modify the convention used to convert from z-values 
+                        out[ i++ ] = ( -d ) / 100;
+                    }
 				}
 				else if( transformToAscConvention && i == 1 )
 				{
+                    /* only negate the value of z */
 					double d = Double.parseDouble( s );
 					out[ i++ ] = -d;
 				}
@@ -449,6 +458,11 @@ xfmf   = gd.getNextString();
 ptsf   = gd.getNextString();
 inverse= gd.getNextBoolean();
 
+imgf = "/data-ssd/john/forSarada/annotation_10.tif";
+xfmf = "/data-ssd/john/forSarada/Allan10_D10-051_refine_6.csv";
+ptsf = "/groups/saalfeld/public/sarada/051_from_30-39.ASC";
+
+
 if( zValue == Double.NaN )
     zValue = null;
 
@@ -463,11 +477,11 @@ xfm = ltm.getTransform();
 ip = IJ.openImage( imgf );
 ipInterp = interpImagePlus( ip );
 
-		/*
-		 *  Transform the imageplus to conform to the ASC file conventions:
-		 *  The origin is at the "top left" corner as usual, and y values *decrease* from top to bottom
-         *  For now, always do this and don't expose the option
-		 */
+/*
+*  Transform the imageplus to conform to the ASC file conventions:
+*  The origin is at the "top left" corner as usual, and y values *decrease* from top to bottom
+*  For now, always do this and don't expose the option
+*/
 ptMap = readPointsAllNames( ptsf, ndims, true, zValue );
 mapOut      = new TreeMap();
 countMapOut = new TreeMap();
@@ -486,4 +500,6 @@ for( String key : ptMap.keySet() )
 writeToCSV( mapOut, new File( fout ));
 writeCountsToCSV( countMapOut, atlasOntology, new File( cfout ));
 
-IJ.showMessage("Point transform finished");
+IJ.showMessage("Point transform finished, results:\n" + 
+    fout + "\n" + 
+    cfout);
