@@ -458,10 +458,10 @@ xfmf   = gd.getNextString();
 ptsf   = gd.getNextString();
 inverse= gd.getNextBoolean();
 
-imgf = "/data-ssd/john/forSarada/annotation_10.tif";
-xfmf = "/data-ssd/john/forSarada/Allan10_D10-051_refine_6.csv";
-ptsf = "/groups/saalfeld/public/sarada/051_from_30-39.ASC";
-
+// TODO: for testing
+//imgf = "/data-ssd/john/forSarada/annotation_10.tif";
+//xfmf = "/data-ssd/john/forSarada/Allan10_D10-051_refine_6.csv";
+//ptsf = "/groups/saalfeld/public/sarada/051_from_30-39.ASC";
 
 if( zValue == Double.NaN )
     zValue = null;
