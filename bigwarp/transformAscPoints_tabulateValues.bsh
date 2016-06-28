@@ -123,64 +123,133 @@ ArrayList createRows(
 
 
 TreeMap getCountsPerLabel( ArrayList labelList )
+{
+    countsByLabel = new TreeMap();
+   
+    for( Object l : labelList )
     {
-        countsByLabel = new TreeMap();
-       
-        for( Object l : labelList )
+        if( countsByLabel.containsKey( l ))
         {
-            if( countsByLabel.containsKey( l ))
-            {
-                // increment the count for this label
-                countsByLabel.put( l, countsByLabel.get( l ).intValue() + 1 );
-            }
-            else
-            {
-                countsByLabel.put( l, 1 );
-            }
+            // increment the count for this label
+            countsByLabel.put( l, countsByLabel.get( l ).intValue() + 1 );
         }
-        return countsByLabel;
+        else
+        {
+            countsByLabel.put( l, 1 );
+        }
     }
+    return countsByLabel;
+}
 
 void writeToCSV( Map mapOut, File f ) 
-	{
-		allrows = new ArrayList(); 
-		for( String key : mapOut.keySet() )
-		{
-			for( String[] v : mapOut.get( key ))
-			{
-				allrows.add( prepend( key, v ) );
-			}
-		}
+{
+    allrows = new ArrayList(); 
+    for( String key : mapOut.keySet() )
+    {
+        for( String[] v : mapOut.get( key ))
+        {
+            allrows.add( prepend( key, v ) );
+        }
+    }
 
-		writer = new CSVWriter( new FileWriter( f ));
-		writer.writeAll( allrows );
-		writer.close();
-	}
+    writer = new CSVWriter( new FileWriter( f ));
+    writer.writeAll( allrows );
+    writer.close();
+}
 
  void writeCountsToCSV( 
 			TreeMap countMapOut,
 			Map atlasOntology,
 			File f )
-	{
-		allrows = new ArrayList();
-		
-		for( String key : countMapOut.keySet() )
-		{
-			map2 = countMapOut.get( key );
-			for( RealType k2 : map2.keySet())
-			{
-				allrows.add( new String[]{ 
-						key, 
-						k2.toString(),
-						atlasOntology.get( (int)k2.getRealDouble() ),
-						map2.get( k2 ).toString() } );
-			}
-		}
-		
-		writer = new CSVWriter( new FileWriter( f ));
-		writer.writeAll( allrows );
-		writer.close();
-	}
+{
+    allrows = new ArrayList();
+    
+    for( String key : countMapOut.keySet() )
+    {
+        map2 = countMapOut.get( key );
+        for( RealType k2 : map2.keySet())
+        {
+            allrows.add( new String[]{ 
+                    key, 
+                    k2.toString(),
+                    atlasOntology.get( (int)k2.getRealDouble() ),
+                    map2.get( k2 ).toString() } );
+        }
+    }
+    
+    writer = new CSVWriter( new FileWriter( f ));
+    writer.writeAll( allrows );
+    writer.close();
+}
+
+public static void writeCountsToTableCSV( 
+			TreeMap countMapOut,
+			Map atlasOntology,
+			File f ) 
+{
+    ArrayList allrows = new ArrayList();
+
+    // for countMapOut
+    // key is a channel, value is a tree going from compartment label (RealType) to count (Integer)
+    
+    String firstKey = countMapOut.keySet().iterator().next();
+    int numChannels = countMapOut.keySet().size();
+    
+    HashSet allCompartmentLabels = new HashSet();
+    for( String key : countMapOut.keySet() )
+    {
+        TreeMap map2 = countMapOut.get( key );
+        for( RealType k2 : map2.keySet())
+        {
+            allCompartmentLabels.add( k2 );
+        }
+    }
+    
+    // build a header row
+    int i = 0;
+    String[] row = new String[ numChannels + 1 ];
+    row[ 0 ] = "Compartment name";
+    Iterator  it = countMapOut.keySet().iterator();
+    while( it.hasNext() )
+    {
+        row[ i + 1 ] = it.next();
+        i++;
+    }
+    allrows.add( row );
+    
+    // fill the next rows with the relevent cell counts
+    for( RealType label : allCompartmentLabels )
+    {
+        row = new String[ numChannels + 1 ];
+        String labelName = atlasOntology.get( (int)label.getRealDouble() );
+        System.out.println( "labelName: " + labelName );
+        if( labelName == null || labelName.isEmpty())
+            row[ 0 ] = "No label";
+        else
+            row[ 0 ] = labelName;
+
+        i = 0;
+        it = countMapOut.keySet().iterator();
+        
+        while( it.hasNext() )
+        {
+            String key = it.next();
+            TreeMap map = countMapOut.get( key );
+            Integer aa = map.get( label );
+            if( aa == null )
+                row[ i + 1 ] = "0"; 
+            else
+                row[ i + 1 ] = aa.toString();
+
+            i++;
+        }
+        allrows.add( row );
+    }
+
+    CSVWriter writer = new CSVWriter( new FileWriter( f ));
+    writer.writeAll( allrows );
+    writer.close();
+}
 
 RealRandomAccessible interpImagePlus( ImagePlus ip )
 {
@@ -259,8 +328,10 @@ ArrayList transformPoints( ArrayList pts, ThinPlateR2LogRSplineKernelTransform x
 	{
 		for( double[] pt : pts )
 	    {
-		    warpedPt = xfm.initialGuessAtInverse( pt, 5.0 );
-		    xfm.inverseTol( pt, warpedPt, 2.0, 4000 );
+		    //warpedPt = xfm.initialGuessAtInverse( pt, 5.0 );
+		    //xfm.inverseTol( pt, warpedPt, 2.0, 4000 );
+            warpedPt = new double[ pt.length ];
+            xfm.inverse( pt, warpedPt, 2.0, 4000 );
 		    out.add( warpedPt );
 		}
 	}
@@ -468,6 +539,7 @@ if( zValue == Double.NaN )
 
 fout   = ptsf.replaceAll( ".ASC", "_pointLabels.csv" );
 cfout  = ptsf.replaceAll( ".ASC", "_counts.csv" );
+tfout  = ptsf.replaceAll( ".ASC", "_countsTable.csv" );
 
 LandmarkTableModel ltm = new LandmarkTableModel( ndims );
 ltm.load( new File( xfmf ));
@@ -499,7 +571,9 @@ for( String key : ptMap.keySet() )
 
 writeToCSV( mapOut, new File( fout ));
 writeCountsToCSV( countMapOut, atlasOntology, new File( cfout ));
+writeCountsToTableCSV( countMapOut, atlasOntology, new File( tfout ));
 
 IJ.showMessage("Point transform finished, results:\n" + 
     fout + "\n" + 
-    cfout);
+    cfout + "\n" + 
+    tfout);
