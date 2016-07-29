@@ -65,7 +65,7 @@ void add( JSONObject jsonObj, Map map )
 	{
 		if( jsonObj.has( "id" ) && jsonObj.has( "name" ))
 		{
-			map.put( jsonObj.getInt( "id" ), jsonObj.getString( "name" ) );
+			map.put( jsonObj.getInt( "id" ), jsonObj.getString( "name" ).replaceAll(",",";") );
 		}
 
 		if( jsonObj.has( "children" ))
